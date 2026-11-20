@@ -1,0 +1,22 @@
+.DS_Store
+node_modules/
+*.log
+.env
+__pycache__/
+
+# Local Claude Code state — never commit; .claude/ is otherwise public in this repo
+.claude/settings.local.json
+
+# Obsidian vault state and scratch files
+.obsidian/
+*.canvas
+*.base
+
+# Source PDFs are ignored by default. Your corpus is usually someone else's
+# copyright, and committing it republishes it. NOTE the extracted raw/<topic>/<slug>.md
+# files are the full text of the same work: they are tracked because the grounding
+# invariant is verified against them, which also means they are just as much a copy.
+# For a corpus you do not own, keep your instance repo PRIVATE (or also ignore raw/).
+# If your sources ARE yours to redistribute, delete the line below and the originals
+# become part of the record alongside their extracted text.
+raw/**/*.pdf
