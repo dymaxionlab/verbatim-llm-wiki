@@ -1,86 +1,139 @@
 # Verbatim
 
-**A method template, built on an Agent Skill, for LLM-maintained wikis that can't misquote your sources.** Drop documents into `raw/`, tell the agent to ingest, and it writes an interlinked wiki where every checked quote, date, and figure is mechanically verified to exist verbatim in a linked source. ("Checked" has a stated boundary: see [Where The Invariant Doesn't Reach](#where-the-invariant-doesnt-reach).)
+**LLM wikis that can't misquote their sources.**
 
-> Every LLM knowledge tool claims to cite its sources. This one greps the source and exits non-zero when a quote drifts — deterministic verification, not a model grading its own homework.
+![Verbatim: a wiki page with one verified quote and one that fails, checked against the raw source](assets/social-preview.png)
+
+Verbatim turns a pile of documents (PDFs, slide decks, transcripts, articles) into a knowledge base that an LLM writes and maintains, then proves that every quote, date and figure in it really appears in your sources.
+
+The knowledge base is an interlinked wiki: markdown pages for concepts, entities, source summaries and cross-source syntheses, all linking to each other. This is the llm-wiki pattern Andrej Karpathy described (see [Credits](#credits)). Verbatim adds the part that makes it trustworthy.
+
+## What it does
+
+1. **You design the schema.** `CLAUDE.md` defines your page types, tags, confidence levels and the outputs you want. The agent builds the structure you specified, not a generic one. ([Guide](docs/designing-your-schema.md))
+2. **It extracts from your raw data.** PDFs and decks become greppable text in `raw/`. Claude Code reads each source and writes schema-conforming wiki pages that cite it.
+3. **It checks the result.** Every quote, date and figure on a page must exist verbatim in the raw file that page links. A checker greps for each one and exits non-zero when one drifts.
+
+Most LLM knowledge tools say they cite their sources. This one verifies the citation by code, so a model is not grading its own homework.
+
+## See it fail
+
+Say the source reads "We now serve 14,000 customers", and the wiki page written from it says "4,200 customers". The checker catches it:
 
 ```
-ingest raw/course-m1/2026-04-12-platform-strategy.md
+$ python3 scripts/AdjudicateSuspects.py
+REAL MISMATCH                                 wiki/summaries/quarterly-update.md
+                                                "4,200"
+
+total suspects adjudicated: 1
+REAL MISMATCHES: 1
+EVIDENCE ERRORS: 0
+$ echo $?
+1
 ```
 
-This repo is the **method template**: clone it, customize the schema, drop in your corpus, ingest. It contains no domain content — instances built with it live in their own repos.
+Fix the page to say 14,000 and the same command prints `REAL MISMATCHES: 0` and `EVIDENCE ERRORS: 0`, and exits 0.
 
-## Why This Exists
+## Who it's for
 
-The [grounding invariant](#lineage) — every load-bearing fact in the wiki exists verbatim in a linked raw file — is not mine. [Astro-Han/karpathy-llm-wiki](https://github.com/Astro-Han/karpathy-llm-wiki) defined it and wrote `check_evidence.py` to enforce it. It works, and on clean markdown at modest scale it works well.
+Use it if you are turning a corpus (course material, research, vendor documents, transcripts) into a structured knowledge base with Claude Code, and the numbers and quotes have to be right. It is also a worked example of a schema you can adapt to your own domain.
 
-Verbatim is what that invariant becomes after 116 sources of slide decks.
+It is not a note-taking app, and it does not judge whether a page's argument is sound. It checks literals: quotes, dates and figures. See [Limits](#limits).
 
-Two things break when you scale it. **The checker's false positives drown the real defects** — its text normalization collapses whitespace and nothing else, so `pdftotext` output produces a firehose of phantom failures from page furniture and hyphenated line-wraps. A gate that cries wolf trains you to skim it, and the one true defect hides in the noise. And **PDFs aren't greppable** — the invariant presumes raw text is what the author typed, but decks become text through a lossy step that mangles quotes and silently drops figures entirely.
+## Quick start
 
-So Verbatim adds an adjudication layer and a first-class extraction stage, and — the part that matters most — an honest boundary around where the invariant *cannot* reach.
+You need [Claude Code](https://claude.ai/code) (or another Agent Skills-compatible tool), [Bun](https://bun.sh) and `pdftotext` (poppler-utils) for PDF extraction, and Python 3.10 or newer.
 
-## How LLMs Actually Break Quotes
+1. **Get the repo.** Clone it (or use it as a template), then `cd` into it.
 
-This is the field data, gathered by running the pattern hard enough to find its edges. Every item is a failure observed in production, not a hypothetical:
+2. **Design your schema.** Open `CLAUDE.md` and fill in the `CUSTOMIZE` sections: your domain, your raw-source streams, your tag taxonomy and your output products. See [Designing Your Schema](docs/designing-your-schema.md).
 
-- **Ellipsis-splicing** — joining two non-adjacent sentences into one quoted span. Reads fine. Isn't what anyone said.
-- **Apostrophe and case drift** — sources vary between straight `'` and curly `’`, sometimes within one corpus. The model normalizes silently and the quote stops matching its own source.
-- **Invented complementary figures** — the source says 80%, the wiki writes 20% for the remainder. Arithmetically true, textually fabricated, and unverifiable by construction.
-- **Cross-source leakage** — a figure from source A appearing on a page whose Raw field links only source B, where nothing can confirm it.
-- **Page-break quoting** — spans crossing PDF page furniture, which defeats verification even when the quote is honest.
-- **Editorial creep** — brackets, added punctuation, re-capitalization inside quotation marks.
+3. **Add sources.** For PDFs and decks:
 
-`CLAUDE.md` names each one as a rule. The vendored `check_evidence.py` flags the ones that surface as quotes, dates, or figures that are not in the source, and `AdjudicateSuspects.py` separates its extraction-artifact false positives from the real defects. The terminal condition is `REAL MISMATCHES: 0` and `EVIDENCE ERRORS: 0`, and the script's exit status says so — a gate, not a report.
+   ```
+   bun scripts/ExtractPdf.ts path/to/pdfs --topic my-stream
+   ```
 
-## What's In The Box
+   The original PDF is kept next to its extracted `.md`. For text you already have, put markdown files in `raw/<topic>/` with the metadata header from `.claude/skills/karpathy-llm-wiki/references/raw-template.md`.
 
-- **`.claude/skills/karpathy-llm-wiki/`** — the vendored operations engine (Astro-Han, MIT, unmodified): ingest / query / lint, triage dispositions, cascade updates, Disputed/Outdated status blocks, and the grounding invariant verified by `check_evidence.py`.
-- **`scripts/AdjudicateSuspects.py`** — the adjudication layer. Re-tests every suspect against furniture-stripped, wrap-joined raw text and splits the output into FALSE-POSITIVE (extraction artifact — leave it) versus REAL MISMATCH (fix the quote). This is what makes the gate survive its own results.
-- **`scripts/ExtractPdf.ts`** — PDF → greppable raw markdown via pdftotext (Bun, zero dependencies): per-page markers for slide-level citation, PDF-metadata title/date pickup, idempotency, collision protection, an OCR-needed guard for image-only decks.
-- **`CLAUDE.md`** — the schema template: page types (concepts / entities / summaries / syntheses, grafted from tonbistudio), frontmatter, tag-taxonomy scaffold, confidence levels, PDF corpus rules, quote discipline, extraction-product flow. Customize the marked sections for your domain.
-- **`wiki/`**, **`raw/`**, **`presentations/`** — empty skeleton, ready for a corpus.
+4. **Ingest, one source first.** In Claude Code:
 
-## The Method
+   ```
+   ingest raw/my-stream/2026-04-12-platform-strategy.md
+   ```
 
-1. **Customize `CLAUDE.md`** — domain purpose, tag taxonomy, extraction products, granularity policy. This file governs every future ingest; an hour here compounds across every page the wiki ever writes.
-2. **Extract** — `bun scripts/ExtractPdf.ts <pdfs> --topic <stream>`. Originals stay immutable beside their extracted text; the article's Raw field always points at the extracted `.md`, never the binary. Evidence checking greps text — a PDF cannot be verified.
-3. **Ingest** — in Claude Code: `ingest raw/<topic>/<file>.md`. Pilot ONE representative source first, review the pages it produces, tune the schema, then batch the rest. Sequential compilation only — index, log, and concept pages are shared state.
-4. **Verify every batch** — `python3 scripts/AdjudicateSuspects.py` until `REAL MISMATCHES: 0` and `EVIDENCE ERRORS: 0` (it exits 0 only then). Customize its furniture patterns for your corpus's page format.
-5. **Query and synthesize** — answers cite pages; durable answers become synthesis pages; extraction products (decks, plans, reports) are built as syntheses first and exported to `presentations/` last, so anything you teach traces back to a source.
+   Review the pages it wrote, tune `CLAUDE.md`, then ingest the rest one at a time. Ingest is sequential because the index, the log and the concept pages are shared.
 
-## Where The Invariant Doesn't Reach
+5. **Verify after every batch.**
 
-Stated plainly, because a verification tool that oversells its coverage is worse than none:
+   ```
+   python3 scripts/AdjudicateSuspects.py
+   ```
 
-- **Slide decks extract sparsely.** Figures, charts, and diagrams lose their meaning in extraction. A claim resting on a chart caps the page at `confidence: medium` or lower, and the prose must say the specifics come from a figure absent from the extracted text.
-- **Verification covers literals, not reasoning.** Numbers, dates, and quotes are checked. Whether the page's argument is *sound* is not — that remains a human judgment.
-- **Image-only PDFs are rejected, not guessed at.** A deck that yields under 100 characters of text is refused, adds nothing to `raw/`, and the error tells you to run OCR first. A scanned deck with a text footer on every page can slip past that threshold, so skim the first extraction of any scan.
-- **Only some literals are checked, and only in some places.** The checker verifies quotes of 15+ characters, ISO dates, and figures that are comma-grouped, decimal, suffixed (K/M/B/%), or four or more digits. A currency symbol is ignored, so `$4.5M` is checked as `4.5M`, and a leading sign is ignored, so `-40%` passes against `40%`. A figure attached to letters is not checked as itself: a unit or lowercase suffix such as `2.5mg`, `3.5x`, `$4.5m`, `$10bn` or `1,200kg` can be wrong and pass (the checker may test only a leading digit run, such as the `1200` in `1200.5mg`, which an unrelated `1200` in the raw would satisfy). An unbalanced double quote in a paragraph (an inch mark, say) mis-pairs the quote spans after it, so a quote there can go unchecked. Small plain integers, spelled-out dates and single-quoted text are not checked either. It also never reads: `> **Status:` blocks (so competing figures in a Disputed block are unchecked), pages with an `> Archived:` header, inline code and fenced code (an unclosed fence hides the rest of the page), the Source/Sources/Raw/Collected/Published/Updated/Archived header lines, link targets, and `index.md` and `log.md`. A quote that is a verbatim fragment of a longer sentence passes even when cutting the rest reverses its meaning. The literal boundary is the "Coverage boundary" docstring at the top of the vendored `check_evidence.py`; the regions above are in its `extract_candidates` and `check_article` functions.
+   Keep going until it prints `REAL MISMATCHES: 0` and `EVIDENCE ERRORS: 0` (exit status 0). If your PDFs leave repeating headers or footers in the text, add them to `FURNITURE_PATTERNS` at the top of that script.
 
-## Operational Lessons
+Then ask the wiki questions in Claude Code. Answers cite pages, and durable answers can be saved as synthesis pages. Decks, plans and reports are built as synthesis pages first and exported to `presentations/` last.
 
-Learned across a 116-source production run, encoded in the schema and scripts:
+## Reading the verifier's output
 
-- Verification runs per-source during ingest, not once at the end — a defect caught at source one is cheap; at source eight it's an archaeology dig.
-- Multi-part talks get one combined summary; module-closing recaps get a "No material" log entry rather than a forced thin page; every corpus source ends with a log entry, so silent truncation is detectable.
-- Agent batches need a completeness gate (every assigned raw appears in the log) and an independent verification gate before commit.
-- Never hand-edit extracted text to make a claim verify. That inverts the invariant and is the one unforgivable move.
+The underlying checker is deliberately strict, and text extracted from PDFs makes it raise false alarms (page headers, hyphenated line wraps). `AdjudicateSuspects.py` re-tests each suspect against cleaned-up raw text and sorts it:
 
-## Requirements
+- **FALSE-POSITIVE**: the quote is in the source once page furniture is stripped. Leave it alone.
+- **REAL MISMATCH**: it is still not in the source. Fix the wiki page.
+- **EVIDENCE ERROR**: a page has no `Raw` link, or the link does not resolve. Fix the link.
 
-- [Claude Code](https://claude.ai/code) (or any Agent Skills-compatible tool) for the engine
-- [Bun](https://bun.sh) + `pdftotext` (poppler-utils) for extraction
-- Python 3.10 or newer for verification (macOS ships an older `python3`; install a current one)
+Never edit the extracted text in `raw/` to make a claim pass. That defeats the whole check.
 
-To check your install, run `python3 scripts/run_tests.py` (the vendored engine's test suite), `python3 scripts/test_adjudicate.py`, `bun test scripts/`, and `python3 scripts/AdjudicateSuspects.py`. On the empty skeleton the last prints `REAL MISMATCHES: 0` and exits 0. Without `pdftotext` installed, `bun test` prints a SKIPPED warning and still exits 0: that is not a pass, so install poppler-utils first.
+## What's in the repo
 
-## Lineage
+```
+CLAUDE.md                          your schema (customize this)
+raw/                               your sources, immutable (starts empty)
+wiki/                              the pages the agent writes (starts with index.md, log.md)
+presentations/                     exports built from synthesis pages (starts empty)
+scripts/ExtractPdf.ts              PDF to greppable markdown
+scripts/AdjudicateSuspects.py      the verification gate
+.claude/skills/karpathy-llm-wiki/  the vendored engine: ingest, query, lint, check_evidence.py
+docs/                              guides and reference
+assets/                            the social preview card
+```
 
-Verbatim is a derivative work and says so. See [ATTRIBUTION.md](./ATTRIBUTION.md) for full credit and license texts:
+## Limits
 
-- **Andrej Karpathy** — the llm-wiki pattern: three layers, three operations.
-- **[Astro-Han/karpathy-llm-wiki](https://github.com/Astro-Han/karpathy-llm-wiki)** (MIT) — the operations engine and the grounding invariant itself, vendored unmodified.
-- **[tonbistudio/llm-wiki](https://github.com/tonbistudio/llm-wiki)** (MIT) — the page-type taxonomy.
+Verification covers literals, not reasoning, and only some literals in some places. In short:
 
-What's added here: the adjudication layer, the PDF corpus pipeline, the quote-failure taxonomy, and the stated limits above.
+- Slide decks extract sparsely. Claims that rest on a chart cap the page at `confidence: medium` or lower.
+- Quotes, ISO dates and figures are checked. Whether the argument is sound is a human judgment.
+- Image-only PDFs are rejected, not guessed at. Run OCR first.
+- A figure attached to letters, such as `2.5mg` or `$10bn`, can be wrong and still pass.
+
+The full list is in [Where The Invariant Doesn't Reach](docs/limits.md). Read it before you rely on the gate.
+
+## Check your install
+
+```
+python3 scripts/run_tests.py
+python3 scripts/test_adjudicate.py
+bun test scripts/
+python3 scripts/AdjudicateSuspects.py
+```
+
+On the empty skeleton the last command prints `REAL MISMATCHES: 0` and exits 0. Without `pdftotext`, `bun test` prints a SKIPPED warning and still exits 0. That is not a pass, so install poppler-utils first. macOS ships an older `python3`, so install a current one.
+
+## Go deeper
+
+- [Designing Your Schema](docs/designing-your-schema.md)
+- [How LLMs Actually Break Quotes](docs/how-llms-break-quotes.md): the failure modes seen in production
+- [Why This Exists](docs/why-this-exists.md)
+- [Operational Lessons](docs/operational-lessons.md)
+- [Where The Invariant Doesn't Reach](docs/limits.md)
+
+## Credits
+
+Verbatim is a derivative work and says so. [ATTRIBUTION.md](./ATTRIBUTION.md) has full credit and license texts.
+
+- **Andrej Karpathy**: the llm-wiki pattern, with three layers and three operations.
+- **[Astro-Han/karpathy-llm-wiki](https://github.com/Astro-Han/karpathy-llm-wiki)** (MIT): the operations engine and the grounding invariant itself, vendored unmodified.
+- **[tonbistudio/llm-wiki](https://github.com/tonbistudio/llm-wiki)** (MIT): the page-type taxonomy.
+
+Added here: the adjudication layer, the PDF corpus pipeline, the quote-failure taxonomy, and the stated limits.
