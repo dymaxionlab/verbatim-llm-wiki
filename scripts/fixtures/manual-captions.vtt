@@ -1,0 +1,19 @@
+WEBVTT
+
+NOTE This block is a comment and must not appear in the transcript.
+
+STYLE
+::cue { color: white }
+
+intro
+00:00:01.000 --> 00:00:03.000
+<v Narrator>Don’t touch the coil.</v>
+
+00:00:03.000 --> 00:00:05.000
+No.
+
+00:00:05.000 --> 00:00:07.000
+No.
+
+00:00:41.500 --> 00:00:44.000
+It “reaches” 80 °C.

@@ -33,7 +33,7 @@ jobs:
       - name: Adjudicator tests (must reject invented figures, dates and quotes)
         run: python3 scripts/test_adjudicate.py
 
-      - name: ExtractPdf tests (symlinks, collisions, OCR guard, topic validation)
+      - name: ExtractPdf, CaptureWeb and CaptureVideo tests (symlinks, collisions, OCR guard, topic validation, HTML-to-text, bylines and references, VTT parsing)
         run: bun test scripts/
 
       - name: Adjudicator on the empty skeleton (exit status is the gate)

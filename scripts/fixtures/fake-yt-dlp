@@ -1,0 +1,24 @@
+#!/usr/bin/env bun
+// Test double for yt-dlp, used only by CaptureVideo.test.ts. It never touches the network.
+// Controlled by environment variables:
+//   FAKE_INFO   path of a JSON file printed on stdout as the metadata
+//   FAKE_VTT    path of a VTT file written as cap.<FAKE_VTT_LANG>.vtt into the -o directory (optional)
+//   FAKE_VTT_LANG  language key for the written file (default en)
+//   FAKE_EXIT   non-zero: print FAKE_STDERR to stderr and exit with this code
+//   FAKE_LOG    file the argv is appended to, one JSON line per call
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+const argv = process.argv.slice(2);
+if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify(argv) + "\n");
+if (process.env.FAKE_EXIT && process.env.FAKE_EXIT !== "0") {
+  console.error(process.env.FAKE_STDERR ?? "ERROR: fake failure");
+  process.exit(Number(process.env.FAKE_EXIT));
+}
+const out = argv[argv.indexOf("-o") + 1];
+if (process.env.FAKE_VTT) {
+  const lang = process.env.FAKE_VTT_LANG ?? "en";
+  fs.copyFileSync(process.env.FAKE_VTT, path.join(path.dirname(out), `cap.${lang}.vtt`));
+}
+console.error("[info] fake yt-dlp progress line that must not be parsed as metadata");
+console.log(fs.readFileSync(process.env.FAKE_INFO!, "utf-8").trim());

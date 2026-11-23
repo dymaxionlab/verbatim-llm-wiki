@@ -20,3 +20,7 @@ __pycache__/
 # If your sources ARE yours to redistribute, delete the line below and the originals
 # become part of the record alongside their extracted text.
 raw/**/*.pdf
+
+# Captured HTML pages and caption files are other people's copyright; the sibling .md is the verified layer.
+raw/**/*.html
+raw/**/*.vtt
